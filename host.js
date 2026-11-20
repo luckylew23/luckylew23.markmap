@@ -86,8 +86,8 @@ exports.activate = function (context) {
     return snapshot()
       .then(function (got) {
         if (got.problem) return textus.ui.message(got.problem);
-        // 全图开在前窗笔记的右侧，两栏并排看；窗口太窄放不下时就只是一个标签页。
-        return textus.layout.openView(VIEW, { where: "beside" });
+        // 开成普通标签页（排在标签条最后）；不开成旁边的分栏。
+        return textus.layout.openView(VIEW);
       })
       .catch(function (err) {
         return textus.ui.message(textus.l10n.t("tabFailed", String((err && err.message) || err)));
