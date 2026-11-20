@@ -8,6 +8,7 @@
 // 节点框的宽窄按真正画出来的文字量：页面外的尺子用同一套字体量一遍，
 // 中文、emoji、主题换的字体都不会冒出框外。
 const api = acquireTextusApi();
+  const t = api.t;
 
 const SVG = "http://www.w3.org/2000/svg";
 const ROW = 26;
@@ -89,7 +90,7 @@ function outline(markdown, path) {
   const lines = markdown.split("\n");
   const start = bodyStart(lines);
   // 根节点就是这篇笔记的文件名（不带路径），不拿正文的标题顶替。
-  const root = { text: fileName(path) || "笔记", children: [], line: 0 };
+  const root = { text: fileName(path) || t("note"), children: [], line: 0 };
   const stack = [{ node: root, level: 0 }];
   const indents = [];
   let heading = 0;
@@ -285,7 +286,7 @@ function paint(root) {
       dot.setAttribute("cy", String(cy));
       dot.setAttribute("r", String(FOLD_R));
       const dotTip = document.createElementNS(SVG, "title");
-      dotTip.textContent = node.collapsed ? "展开子节点" : "收起子节点";
+      dotTip.textContent = node.collapsed ? t("expandChildren") : t("collapseChildren");
       dot.append(dotTip);
       // 圈里一道横线是展开着；收着的时候再补一道竖线，成了个加号。
       const bar = function (x1, y1, x2, y2) {
@@ -339,7 +340,7 @@ function paint(root) {
 // 导出用的图：把画过的那张在别处重画一遍，主题的颜色和字体都写进属性里，
 // 存成文件以后不靠样式表也是现在看到的样子。整张按原尺寸导出，不跟缩放走。
 function exportMarkup() {
-  if (!view) throw new Error("这张图还没画好。");
+  if (!view) throw new Error(t("notDrawn"));
   const theme = getComputedStyle(document.documentElement);
   // 主题的变量偶尔是渐变或空值，画图只认纯色，认不出就用备用色。
   const color = function (name, fallback) {
@@ -523,13 +524,13 @@ function draw() {
   try {
     const root = outline(source.text, source.path);
     if (!root.children.length) {
-      show("这篇笔记里还没有标题或列表。");
+      show(t("empty"));
       return;
     }
     empty.hidden = true;
     paint(root);
   } catch (err) {
-    show("导图画不出来：" + String((err && err.message) || err));
+    show(t("renderFailed", String((err && err.message) || err)));
   }
 }
 
@@ -561,14 +562,14 @@ fullButton.addEventListener("click", function () {
 // 点「导出图片」：把眼前的这张（折着的节点照旧折着）交给 host.js 存成文件。
 exportButton.addEventListener("click", function () {
   try {
-    if (!view) throw new Error("这张图还没画好。");
+    if (!view) throw new Error(t("notDrawn"));
     api.postMessage({
       type: "export",
       svg: exportMarkup(),
       name: source ? fileName(source.path) : "",
     });
   } catch (err) {
-    tell("导出不了图片：" + String((err && err.message) || err));
+    tell(t("exportFailed", String((err && err.message) || err)));
   }
 });
 
@@ -634,6 +635,22 @@ function onMessage(message) {
 }
 
 // 1.7 起消息接口叫 onDidReceiveMessage，早先的版本叫 onMessage。
+  // The toolbar's labels and the empty note come from the strings, like
+  // the rest of the panel.
+  const fill = function (id, key, attribute) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (attribute) el.setAttribute(attribute, t(key));
+    else el.textContent = t(key);
+  };
+  fill("full", "allView");
+  fill("full", "openTab", "title");
+  fill("export", "exportImage");
+  fill("export", "saveImage", "title");
+  fill("zoom-out", "zoomOut", "title");
+  fill("zoom-in", "zoomIn", "title");
+  fill("empty", "empty");
+
 const listen = api.onDidReceiveMessage || api.onMessage;
 if (listen) listen.call(api, onMessage);
 

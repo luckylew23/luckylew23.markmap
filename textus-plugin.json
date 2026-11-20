@@ -1,10 +1,29 @@
 {
-  "author": "the app's AI",
+  "id": "luckylew23.markmap",
+  "name": "%name%",
+  "version": "0.1.0",
+  "publisher": "luckylew23",
+  "author": "luckylew23",
+  "license": "MIT",
+  "repository": "https://github.com/luckylew23/luckylew23.markmap",
+  "description": "%description%",
+  "engines": {
+    "textus": ">=1.4.3"
+  },
+  "platforms": [
+    "desktop",
+    "ios"
+  ],
+  "main": "host.js",
+  "permissions": [
+    "editor.read",
+    "files.write"
+  ],
   "contributes": {
     "commands": [
       {
         "command": "luckylew23.markmap.open",
-        "title": "打开思维导图"
+        "title": "%command.open%"
       }
     ],
     "menus": {
@@ -24,29 +43,76 @@
       {
         "icon": "tab.svg",
         "id": "luckylew23.markmap.panel",
-        "title": "思维导图",
+        "title": "%panel.title%",
         "type": "webview"
       }
     ],
     "views": [
       {
         "id": "luckylew23.markmap.view",
-        "title": "思维导图",
+        "title": "%view.title%",
         "type": "webview"
       }
     ]
   },
-  "description": "把当前笔记整篇画成思维导图：直接在标签页里看全图，可以缩放、抓着鼠标拖动，还能把图导出成图片。",
-  "engines": {
-    "textus": ">=1.3.10"
-  },
-  "id": "luckylew23.markmap",
-  "main": "host.js",
-  "name": "思维导图侧栏",
-  "permissions": [
-    "editor.read",
-    "files.write"
-  ],
-  "publisher": "luckylew23",
-  "version": "0.8.0"
+  "l10n": {
+    "en": {
+      "name": "Whole-Note Mind Map",
+      "description": "Draws the whole note as a mind map: open it in a tab or the sidebar to see the full picture, pan and zoom, click a node to jump back to its line, and export the map as an SVG file next to the note.",
+      "command.open": "Open Mind Map",
+      "panel.title": "Mind Map",
+      "view.title": "Mind Map",
+      "note": "Note",
+      "defaultName": "Mind Map",
+      "allView": "Whole map",
+      "openTab": "Open the whole map in a tab",
+      "exportImage": "Export image",
+      "saveImage": "Save this map as an image next to the note",
+      "zoomOut": "Zoom out",
+      "zoomIn": "Zoom in",
+      "empty": "No headings or lists in this note yet.",
+      "notDrawn": "The map isn't drawn yet.",
+      "renderFailed": "Couldn't draw the map: {0}",
+      "exportFailed": "Couldn't export the image: {0}",
+      "noNote": "No note is open.",
+      "noFolder": "No folder is open, so there is nowhere to save the image.",
+      "exported": "Image exported: {0}",
+      "nextToNote": "next to the note",
+      "tabFailed": "Couldn't open the tab: {0}",
+      "jumpFailed": "Couldn't jump: {0}",
+      "pageFailed": "Couldn't read the page: {0}",
+      "panelPageFailed": "Couldn't read the mind map page: {0}",
+      "expandChildren": "Expand children",
+      "collapseChildren": "Collapse children"
+    },
+    "zh": {
+      "name": "整篇思维导图",
+      "description": "把当前笔记整篇画成思维导图：直接在标签页里看全图，可以缩放、抓着鼠标拖动，点节点跳回笔记的那一行，还能把图导出成图片存在笔记旁边。",
+      "command.open": "打开思维导图",
+      "panel.title": "思维导图",
+      "view.title": "思维导图",
+      "note": "笔记",
+      "defaultName": "思维导图",
+      "allView": "全图",
+      "openTab": "在新标签页里看整张图",
+      "exportImage": "导出图片",
+      "saveImage": "把这张图存成图片，放在笔记旁边",
+      "zoomOut": "缩小",
+      "zoomIn": "放大",
+      "empty": "这篇笔记里还没有标题或列表。",
+      "notDrawn": "这张图还没画好。",
+      "renderFailed": "导图画不出来：{0}",
+      "exportFailed": "导出不了图片：{0}",
+      "noNote": "没有打开的笔记。",
+      "noFolder": "没有打开文件夹，图片没地方存。",
+      "exported": "图片已导出：{0}",
+      "nextToNote": "笔记旁边",
+      "tabFailed": "标签页打不开：{0}",
+      "jumpFailed": "跳不过去：{0}",
+      "pageFailed": "页面读不出来：{0}",
+      "panelPageFailed": "思维导图页面读不出来：{0}",
+      "expandChildren": "展开子节点",
+      "collapseChildren": "收起子节点"
+    }
+  }
 }

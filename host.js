@@ -13,7 +13,7 @@ exports.activate = function (context) {
 
   const nameOf = function (path) {
     const file = String(path || "").split(/[\\/]/).pop() || "";
-    return file.replace(/\.[^.]+$/, "") || "笔记";
+    return file.replace(/\.[^.]+$/, "") || textus.l10n.t("note");
   };
 
   // 文件名里不能出现的字符换成短横，剩下的照用。
@@ -21,7 +21,7 @@ exports.activate = function (context) {
     const clean = String(name || "")
       .replace(/[\\/:*?"<>|]+/g, "-")
       .trim();
-    return clean || "思维导图";
+    return clean || textus.l10n.t("defaultName");
   };
 
   // 笔记所在的文件夹；笔记不在文件夹里时是空字符串，图片就放根上。
@@ -35,7 +35,7 @@ exports.activate = function (context) {
   // 问不到就用文件名（文件标签页平时写的也就是它）。
   const titleOf = function (path) {
     const fallback = nameOf(path);
-    if (!path) return Promise.resolve("思维导图");
+    if (!path) return Promise.resolve(textus.l10n.t("view.title"));
     return Promise.resolve()
       .then(function () {
         return textus.layout.tabs();
@@ -77,7 +77,7 @@ exports.activate = function (context) {
       })
       .catch(function () {
         if (last.text || last.path) return { text: last.text, path: last.path };
-        return { text: "", path: "", problem: "没有打开的笔记。" };
+        return { text: "", path: "", problem: textus.l10n.t("noNote") };
       });
   };
 
@@ -89,7 +89,7 @@ exports.activate = function (context) {
         return textus.layout.openView(VIEW);
       })
       .catch(function (err) {
-        return textus.ui.message("标签页打不开：" + String((err && err.message) || err));
+        return textus.ui.message(textus.l10n.t("tabFailed", String((err && err.message) || err)));
       });
   };
 
@@ -101,17 +101,17 @@ exports.activate = function (context) {
         return textus.files.root();
       })
       .then(function (root) {
-        if (!root) throw new Error("没有打开文件夹，图片没地方存。");
+        if (!root) throw new Error(textus.l10n.t("noFolder"));
         const dir = folderOf(last.path);
         const target = (dir ? dir + "/" : "") + safeName(message.name) + ".svg";
         return textus.files.create(target, String(message.svg || ""), { unique: true });
       })
       .then(function (written) {
         const path = typeof written === "string" ? written : (written && written.path) || "";
-        return textus.ui.notice("图片已导出：" + (path || "笔记旁边"));
+        return textus.ui.notice(textus.l10n.t("exported", path || textus.l10n.t("nextToNote")));
       })
       .catch(function (err) {
-        return textus.ui.message("导出不了图片：" + String((err && err.message) || err));
+        return textus.ui.message(textus.l10n.t("exportFailed", String((err && err.message) || err)));
       });
   };
 
@@ -138,11 +138,11 @@ exports.activate = function (context) {
     return textus.editor
       .reveal({ line: line })
       .catch(function () {
-        if (!last.path) throw new Error("没有打开的笔记。");
+        if (!last.path) throw new Error(textus.l10n.t("noNote"));
         return textus.layout.open({ path: last.path, line: line });
       })
       .catch(function (err) {
-        return textus.ui.message("跳不过去：" + String((err && err.message) || err));
+        return textus.ui.message(textus.l10n.t("jumpFailed", String((err && err.message) || err)));
       });
   };
 
@@ -176,7 +176,7 @@ exports.activate = function (context) {
           };
           if (webview.onDidDispose) webview.onDidDispose(stop);
 
-          setName(webview, "思维导图");
+          setName(webview, textus.l10n.t("view.title"));
           context.plugin
             .readText("panel.html")
             .then(function (html) {
@@ -184,8 +184,8 @@ exports.activate = function (context) {
               refresh();
             })
             .catch(function (err) {
-              context.log.error("页面读不出来：" + String((err && err.message) || err));
-              return textus.ui.message("思维导图页面读不出来：" + String((err && err.message) || err));
+              context.log.error(textus.l10n.t("pageFailed", String((err && err.message) || err)));
+              return textus.ui.message(textus.l10n.t("panelPageFailed", String((err && err.message) || err)));
             });
         },
       }),
