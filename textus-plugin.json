@@ -1,11 +1,12 @@
 {
   "id": "luckylew23.markmap",
   "name": "%name%",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "publisher": "luckylew23",
   "author": "luckylew23",
   "license": "MIT",
   "repository": "https://github.com/luckylew23/luckylew23.markmap",
+  "icon": "tab.svg",
   "description": "%description%",
   "engines": {
     "textus": ">=1.4.3"
@@ -68,6 +69,7 @@
       "exportImage": "Export image",
       "exported": "Image exported: {0}",
       "jumpFailed": "Couldn't jump: {0}",
+      "levels": "Levels",
       "name": "Whole-Note Mind Map",
       "nextToNote": "next to the note",
       "noFolder": "No folder is open, so there is nowhere to save the image.",
@@ -97,6 +99,7 @@
       "exportImage": "导出图片",
       "exported": "图片已导出：{0}",
       "jumpFailed": "跳不过去：{0}",
+      "levels": "展示层级",
       "name": "整篇思维导图",
       "nextToNote": "笔记旁边",
       "noFolder": "没有打开文件夹，图片没地方存。",

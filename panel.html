@@ -9,12 +9,16 @@
       <span id="name"></span>
       <span class="grow"></span>
       <button id="full" type="button">全图</button>
-      <button id="export" type="button">导出图片</button>
+      <label class="levels">
+        <span id="levels-label">展示层级</span>
+        <select id="levels"></select>
+      </label>
       <div class="zoom">
         <button id="zoom-out" type="button">−</button>
         <span id="zoom-label">100%</span>
         <button id="zoom-in" type="button">+</button>
       </div>
+      <button id="export" type="button">导出图片</button>
     </div>
     <div id="map"></div>
     <p id="empty" hidden></p>

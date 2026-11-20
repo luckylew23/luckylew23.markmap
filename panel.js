@@ -1,8 +1,10 @@
-// 思维导图：当前笔记的标题和列表画成一棵向右展开的树，根在左上，
-// 根节点就是这篇笔记的文件名，正文的一级标题也是它的分支。
+// 思维导图：当前笔记的标题和列表画成一棵向右展开的树，根在左上。
+// 全文只有一个一级标题时它就是根，否则根是这篇笔记的文件名。
 // 侧栏和新标签页里画的是同一张图：右上角的 − / + 缩放，
 // 鼠标滚轮和触屏双指捏合也能缩（围着指针或两指的中点），两指并拢拖着走就是平移；
 // 按住鼠标（左键或右键）在图上拖着走可以平移；笔记改动时重画。
+// 工具栏里的「展示层级」只画到第几层：默认 4 层，最高 10 层；被层级挡住的
+// 孩子也画个加号小圆圈，点它把层级放开一层。
 // 「导出图片」把整张图重画成一张独立的 SVG 交给 host.js 存成文件。
 // 有子节点的节点，右侧线条汇聚的地方画一个小圆圈：点它收起或展开子节点，
 // 圈里一道横线是展开着，再加一道竖线是收着。点末端节点跳到笔记里的那一行。
@@ -22,16 +24,29 @@ const FOLD_ARM = 2.5;
 // 缩放档位：1 是「刚好放得下」的尺寸，右上角显示的是相对它的百分比。
 // 按钮（和换笔记时的 100%）一档一档走；滚轮和捏合不按档，连着缩，档位取最近的一档。
 const STEPS = [0.3, 0.4, 0.5, 0.67, 0.8, 1, 1.25, 1.5, 2, 2.5, 3, 4];
+// 工具栏里的「展示层级」：只画到第几层，根是第 1 层；最多 10 层。
+const MAX_LEVELS = 10;
+let levels = 4;
 
 const box = document.getElementById("map");
 const empty = document.getElementById("empty");
 const nameLabel = document.getElementById("name");
 const fullButton = document.getElementById("full");
 const exportButton = document.getElementById("export");
+const levelsSelect = document.getElementById("levels");
 const zoomLabel = document.getElementById("zoom-label");
 const zoomIn = document.getElementById("zoom-in");
 const zoomOut = document.getElementById("zoom-out");
 const measure = document.createElement("canvas").getContext("2d");
+
+// 「展示层级」的下拉框：1 到 10 层，默认 4 层。
+for (let i = 1; i <= MAX_LEVELS; i++) {
+  const option = document.createElement("option");
+  option.value = String(i);
+  option.textContent = String(i);
+  levelsSelect.append(option);
+}
+levelsSelect.value = String(levels);
 
 // 量字宽用的尺子：藏在页面左边外面，字体跟节点上的字一样。
 const ruler = document.createElementNS(SVG, "svg");
@@ -91,12 +106,15 @@ function bodyStart(lines) {
 function outline(markdown, path) {
   const lines = markdown.split("\n");
   const start = bodyStart(lines);
-  // 根节点就是这篇笔记的文件名（不带路径），不拿正文的标题顶替。
+  // 根节点先取文件名：全文恰有一个一级标题时，下面把它换成那个标题。
   const root = { text: fileName(path) || t("note"), children: [], line: 0 };
   const stack = [{ node: root, level: 0 }];
   const indents = [];
   let heading = 0;
   let fence = null;
+  // 一级标题数：恰有一个时记下它的行号，画完把那个节点提成根。
+  let h1s = 0;
+  let h1Line = -1;
   for (let i = start; i < lines.length; i++) {
     const line = lines[i];
     const mark = /^\s*(`{3,}|~{3,})/.exec(line);
@@ -115,6 +133,10 @@ function outline(markdown, path) {
       level = heading;
       text = h[2];
       indents.length = 0;
+      if (heading === 1) {
+        h1s += 1;
+        if (h1s === 1) h1Line = i;
+      }
     } else if (li) {
       const indent = li[1].replace(/\t/g, "  ").length;
       while (indents.length && indents[indents.length - 1] >= indent) indents.pop();
@@ -131,7 +153,16 @@ function outline(markdown, path) {
     stack[stack.length - 1].node.children.push(node);
     stack.push({ node: node, level: level });
   }
-  return root;
+  // 恰有一个一级标题，而且它下面有内容：这个标题当根，标题前面的顶层
+  // 列表排在它前面。没有内容时仍用文件名，标题还是它下面的一个分支。
+  if (h1s !== 1) return root;
+  const node = root.children.find(function (n) {
+    return n.line === h1Line;
+  });
+  if (!node || !node.children.length) return root;
+  const at = root.children.indexOf(node);
+  node.children = root.children.slice(0, at).concat(node.children);
+  return node;
 }
 
 // 把每段文字真正画出来有多宽量一遍：一次排完再一个个读，页面只重排一次。
@@ -198,10 +229,14 @@ function paint(root) {
     node.depth = depth;
     node.key = key;
     node.collapsed = node.children.length > 0 && folded.has(key);
+    // 展示层级只画到第 levels 层：这一层往下的孩子先藏起来，节点右端
+    // 照旧画加号小圆圈，点它把层级放开一层。
+    node.truncated =
+      node.children.length > 0 && !node.collapsed && depth >= levels - 1;
     // 框 = 量出来的字宽 + 两边留白 + 1 像素，圆角处也不会压到字上。
     node.w = Math.ceil(widths.get(node.text) || 0) + PAD_X * 2 + 1;
     cols[depth] = Math.max(cols[depth] || 0, node.w);
-    const kids = node.collapsed ? [] : node.children;
+    const kids = node.collapsed || node.truncated ? [] : node.children;
     if (!kids.length) {
       node.top = rows * ROW;
       rows += 1;
@@ -278,19 +313,21 @@ function paint(root) {
     label.textContent = node.text;
     group.append(tip, rect, label);
     // 有子节点：在节点右端、子节点连线汇聚的地方画个小圆圈，点它收起或展开。
+    // 收起的和被「展示层级」挡住的都画加号；只有收起的才画虚线的框。
     let fold = null;
     if (node.children.length) {
+      const foldedHere = node.collapsed || node.truncated;
       const fx = xs[node.depth] + node.w + FOLD_R;
-      fold = { x: fx, y: cy, folded: node.collapsed };
+      fold = { x: fx, y: cy, folded: foldedHere };
       const dot = document.createElementNS(SVG, "circle");
       dot.setAttribute("class", "fold");
       dot.setAttribute("cx", String(fx));
       dot.setAttribute("cy", String(cy));
       dot.setAttribute("r", String(FOLD_R));
       const dotTip = document.createElementNS(SVG, "title");
-      dotTip.textContent = node.collapsed ? t("expandChildren") : t("collapseChildren");
+      dotTip.textContent = foldedHere ? t("expandChildren") : t("collapseChildren");
       dot.append(dotTip);
-      // 圈里一道横线是展开着；收着的时候再补一道竖线，成了个加号。
+      // 圈里一道横线是展开着；收着（或被层级挡住）的时候再补一道竖线，成了个加号。
       const bar = function (x1, y1, x2, y2) {
         const line = document.createElementNS(SVG, "path");
         line.setAttribute("class", "fold-sign");
@@ -298,7 +335,7 @@ function paint(root) {
         return line;
       };
       group.append(dot, bar(fx - FOLD_ARM, cy, fx + FOLD_ARM, cy));
-      if (node.collapsed) group.append(bar(fx, cy - FOLD_ARM, fx, cy + FOLD_ARM));
+      if (foldedHere) group.append(bar(fx, cy - FOLD_ARM, fx, cy + FOLD_ARM));
     }
     items.push({
       x: xs[node.depth],
@@ -318,8 +355,15 @@ function paint(root) {
       }
       try {
         if (node.children.length) {
-          if (folded.has(node.key)) folded.delete(node.key);
-          else folded.add(node.key);
+          if (node.truncated) {
+            // 被「展示层级」挡住的节点：点加号把层级放开一层，让它的孩子露出来。
+            levels = Math.min(MAX_LEVELS, node.depth + 2);
+            levelsSelect.value = String(levels);
+          } else if (folded.has(node.key)) {
+            folded.delete(node.key);
+          } else {
+            folded.add(node.key);
+          }
           draw();
         } else {
           api.postMessage({ type: "reveal", line: node.line });
@@ -329,7 +373,8 @@ function paint(root) {
       }
     });
     nodes.append(group);
-    if (!node.collapsed) node.children.forEach((kid) => add(kid, node));
+    // 收着的和被「展示层级」挡住的都不再往下画；walk 没给藏起来的孩子排位置。
+    if (!node.collapsed && !node.truncated) node.children.forEach((kid) => add(kid, node));
   };
   add(root, null);
 
@@ -571,6 +616,16 @@ zoomOut.addEventListener("click", function () {
   }
 });
 
+// 下拉框换「展示层级」：只画到第几层，画完仍保持 100% 的缩放。
+levelsSelect.addEventListener("change", function () {
+  try {
+    levels = Math.min(MAX_LEVELS, Math.max(1, Number(levelsSelect.value) || levels));
+    draw();
+  } catch (err) {
+    show(String((err && err.message) || err));
+  }
+});
+
 // 点「全图」：侧栏里换个宽地方看同一张图。
 fullButton.addEventListener("click", function () {
   try {
@@ -733,6 +788,8 @@ function onMessage(message) {
   };
   fill("full", "allView");
   fill("full", "openTab", "title");
+  fill("levels-label", "levels");
+  fill("levels", "levels", "title");
   fill("export", "exportImage");
   fill("export", "saveImage", "title");
   fill("zoom-out", "zoomOut", "title");

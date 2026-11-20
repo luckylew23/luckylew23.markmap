@@ -40,6 +40,28 @@ body {
 #export {
   flex: none;
 }
+/* 「展示层级」下拉框和按钮同一套样式，紧挨着缩放按钮放在它前面。 */
+.levels {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--ui-muted);
+}
+.levels select {
+  height: 22px;
+  padding: 0 var(--space-1);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--shape-s);
+  background: var(--ui-subtle);
+  color: var(--ui-text);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+.levels select:hover {
+  border-color: var(--ui-accent);
+}
 .zoom {
   display: flex;
   flex: none;
