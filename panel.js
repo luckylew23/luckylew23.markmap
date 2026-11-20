@@ -1,6 +1,7 @@
 // 思维导图：当前笔记的标题和列表画成一棵向右展开的树，根在左上，
 // 根节点就是这篇笔记的文件名，正文的一级标题也是它的分支。
 // 侧栏和新标签页里画的是同一张图：右上角的 − / + 缩放，
+// 鼠标滚轮和触屏双指捏合也能缩（围着指针或两指的中点），两指并拢拖着走就是平移；
 // 按住鼠标（左键或右键）在图上拖着走可以平移；笔记改动时重画。
 // 「导出图片」把整张图重画成一张独立的 SVG 交给 host.js 存成文件。
 // 有子节点的节点，右侧线条汇聚的地方画一个小圆圈：点它收起或展开子节点，
@@ -19,6 +20,7 @@ const FONT = 12;
 const FOLD_R = 5.5;
 const FOLD_ARM = 2.5;
 // 缩放档位：1 是「刚好放得下」的尺寸，右上角显示的是相对它的百分比。
+// 按钮（和换笔记时的 100%）一档一档走；滚轮和捏合不按档，连着缩，档位取最近的一档。
 const STEPS = [0.3, 0.4, 0.5, 0.67, 0.8, 1, 1.25, 1.5, 2, 2.5, 3, 4];
 
 const box = document.getElementById("map");
@@ -471,27 +473,46 @@ function updateZoom() {
   zoomIn.disabled = step >= STEPS.length - 1;
 }
 
-// 换一档：只改 SVG 画出来的大小，围着看图时的中心点缩放。
-function applyZoom() {
+// 离哪一档最近：滚轮和捏合是连着缩的，档位跟着最近的一档走，按钮才有上下档。
+function nearestStep(value) {
+  let best = 0;
+  for (let i = 1; i < STEPS.length; i++) {
+    if (Math.abs(STEPS[i] - value) < Math.abs(STEPS[best] - value)) best = i;
+  }
+  return best;
+}
+
+// 换缩放，围着内容上的一个点（视口坐标）：那个点留在原地，图朝它缩放。
+// 只改 SVG 画出来的大小，不重新排；滚轮、双指捏合和按钮都走这里。
+function zoomAt(next, clientX, clientY) {
   if (!view) return;
+  next = Math.min(STEPS[STEPS.length - 1], Math.max(STEPS[0], next));
   const oldW = parseFloat(view.svg.getAttribute("width")) || 1;
-  const oldH = parseFloat(view.svg.getAttribute("height")) || 1;
+  const rect = view.svg.getBoundingClientRect();
+  const offX = clientX - rect.left;
+  const offY = clientY - rect.top;
+  zoom = next;
+  step = nearestStep(zoom);
   const size = scaled(view.width, view.height, view.fit);
-  const cx = (box.scrollLeft + box.clientWidth / 2) / oldW;
-  const cy = (box.scrollTop + box.clientHeight / 2) / oldH;
+  if (size.w === oldW) {
+    updateZoom();
+    return;
+  }
+  const ratio = size.w / oldW;
   view.svg.setAttribute("width", String(size.w));
   view.svg.setAttribute("height", String(size.h));
-  box.scrollLeft = Math.max(0, cx * size.w - box.clientWidth / 2);
-  box.scrollTop = Math.max(0, cy * size.h - box.clientHeight / 2);
+  box.scrollLeft = Math.max(0, box.scrollLeft + offX * (ratio - 1));
+  box.scrollTop = Math.max(0, box.scrollTop + offY * (ratio - 1));
   updateZoom();
 }
 
+// 按钮：一档一档来，围着看图的地方的中心缩放；连着缩过就先归到最近的档。
 function stepZoom(delta) {
   const next = Math.min(STEPS.length - 1, Math.max(0, step + delta));
-  if (next === step) return;
+  if (next === step && zoom === STEPS[step]) return;
   step = next;
-  zoom = STEPS[step];
-  applyZoom();
+  const rect = box.getBoundingClientRect();
+  zoomAt(STEPS[next], rect.left + box.clientWidth / 2, rect.top + box.clientHeight / 2);
 }
 
 function show(text) {
@@ -611,6 +632,73 @@ document.addEventListener("mousemove", function (event) {
 
 document.addEventListener("mouseup", endDrag);
 window.addEventListener("blur", endDrag);
+
+// 鼠标滚轮、触控板双指滚动：在图上滚就是缩放，围着指针下的那个点。
+// 滚多少缩多少，连着不跳档；缩到档位表的两头就停住。
+box.addEventListener("wheel", function (event) {
+  if (!view) return;
+  event.preventDefault();
+  try {
+    // deltaMode 1 是「行」、2 是「页」，先换算成像素再算比例。
+    const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? box.clientHeight || 400 : 1;
+    const delta = Math.abs(event.deltaY) >= Math.abs(event.deltaX || 0) ? event.deltaY : event.deltaX || 0;
+    zoomAt(zoom * Math.exp(-delta * unit * 0.0015), event.clientX, event.clientY);
+  } catch (err) {
+    show(String((err && err.message) || err));
+  }
+}, { passive: false });
+
+// 触摸屏双指：捏合缩放，围着两指的中点；中点挪动，图跟着挪（两指平移）。
+// 一根手指不拦，仍交给浏览器自己滚动。抬起一根手指，这次捏合就结束。
+let pinch = null;
+
+function pinchStart(event) {
+  const a = event.touches[0];
+  const b = event.touches[1];
+  return {
+    dist: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1,
+    midX: (a.clientX + b.clientX) / 2,
+    midY: (a.clientY + b.clientY) / 2,
+    zoom: zoom,
+    left: box.scrollLeft,
+    top: box.scrollTop,
+  };
+}
+
+box.addEventListener("touchstart", function (event) {
+  if (event.touches.length < 2) {
+    pinch = null;
+    return;
+  }
+  // 两根手指起手就归页面管，别让浏览器自己把页面捏大。
+  event.preventDefault();
+  pinch = pinchStart(event);
+}, { passive: false });
+
+box.addEventListener("touchmove", function (event) {
+  if (!pinch || event.touches.length < 2) return;
+  event.preventDefault();
+  try {
+    const a = event.touches[0];
+    const b = event.touches[1];
+    const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1;
+    const midX = (a.clientX + b.clientX) / 2;
+    const midY = (a.clientY + b.clientY) / 2;
+    // 中点走了多远，视图就补滚多少：两指并拢拖着走就是平移。
+    box.scrollLeft = Math.max(0, pinch.left - (midX - pinch.midX));
+    box.scrollTop = Math.max(0, pinch.top - (midY - pinch.midY));
+    zoomAt(pinch.zoom * (dist / pinch.dist), midX, midY);
+  } catch (err) {
+    show(String((err && err.message) || err));
+  }
+}, { passive: false });
+
+function pinchEnd(event) {
+  if (pinch && event.touches.length < 2) pinch = null;
+}
+
+box.addEventListener("touchend", pinchEnd);
+box.addEventListener("touchcancel", pinchEnd);
 
 function onMessage(message) {
   if (!message || message.type !== "text") return;

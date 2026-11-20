@@ -1,5 +1,6 @@
 /* 思维导图的页面：颜色都取主题自己的变量，换主题不用重画。
-   页面整页不滚，图在自己的框里滚：抓着鼠标拖动才能平移。 */
+   页面整页不滚，图在自己的框里滚：抓着鼠标拖动或一根手指推都能平移，
+   双指捏合的缩放归页面自己接，不让浏览器接管。 */
 html,
 body {
   height: 100%;
@@ -79,6 +80,8 @@ body {
   overflow: auto;
   cursor: grab;
   padding: var(--space-2);
+  /* 一根手指仍让浏览器自己滚（带惯性）；捏合不在允许之列，双指就归页面接。 */
+  touch-action: pan-x pan-y;
 }
 #map.panning {
   cursor: grabbing;
