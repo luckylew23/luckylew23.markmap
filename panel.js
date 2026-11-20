@@ -9,8 +9,9 @@
 // 有子节点的节点，右侧线条汇聚的地方画一个小圆圈：点它收起或展开子节点，
 // 圈里一道横线是展开着，再加一道竖线是收着。点末端节点跳到笔记里的那一行。
 // 节点框的宽窄按真正画出来的文字量：页面外的尺子用同一套字体量一遍，
-// 中文、emoji、主题换的字体都不会冒出框外。一行超过约 10 个字的标签拆成
-// 几行画进高一点的方框，长图不至于被一条很长的节点拉得太宽。
+// 中文、emoji、主题换的字体都不会冒出框外。一行超过换行预算的标签拆成
+// 几行画进高一点的方框，长图不至于被一条很长的节点拉得太宽；预算按节点
+// 角色不同（根、分支、叶子），见 paint() 里的说明。
 const api = acquireTextusApi();
   const t = api.t;
 
@@ -19,9 +20,12 @@ const ROW = 26;
 const COL_GAP = 26;
 const PAD_X = 7;
 const FONT = 12;
-// 长标签换行：一行超过约 10 个字的宽度就拆成几行，画进一个高一些的方框。
-// 中文、全角一个字算 2 份宽，半角的英文数字算 1 份；20 份正好是 10 个字。
-const WRAP_UNITS = 20;
+// 长标签换行：一行超过预算就拆成几行，画进一个高一些的方框。
+// 中文、全角一个字算 2 份宽，半角的英文数字算 1 份；32 份≈16 个字。
+// 预算按节点角色定：分支早点换行保持骨架窄，叶子短项尽量单行，根基本单行。
+const BRANCH_WRAP_UNITS = 32;
+const LEAF_WRAP_UNITS = 44;
+const ROOT_WRAP_UNITS = 48;
 // 多行方框的行高和上下留白；单行的框仍是原来的 18 像素高。
 const LINE_H = 16;
 const PAD_Y = 4;
@@ -127,10 +131,10 @@ function atomsOf(text) {
   return atoms;
 }
 
-// 标签超过约 10 个字的宽度就拆成几行：中文哪儿都能断，英文数字按词断，
+// 标签超过预算宽度就拆成几行：中文哪儿都能断，英文数字按词断，
 // 一行都装不下的长词硬切开。行首行尾的空格丢掉。没超的照旧一行。
-function wrapLines(text) {
-  if (unitsOf(text) <= WRAP_UNITS) return [text];
+function wrapLines(text, budget) {
+  if (unitsOf(text) <= budget) return [text];
   const lines = [];
   let line = "";
   let units = 0;
@@ -142,16 +146,16 @@ function wrapLines(text) {
       }
       continue;
     }
-    if (line && units + atom.units > WRAP_UNITS) {
+    if (line && units + atom.units > budget) {
       lines.push(line.trim());
       line = "";
       units = 0;
     }
-    if (atom.units > WRAP_UNITS) {
+    if (atom.units > budget) {
       // 一个词比一行还宽：按字硬切开，分几行放。
       for (const ch of atom.text) {
         const u = ch.codePointAt(0) > 0xff ? 2 : 1;
-        if (units + u > WRAP_UNITS) {
+        if (units + u > budget) {
           lines.push(line.trim());
           line = "";
           units = 0;
@@ -293,17 +297,25 @@ function scaled(width, height, fit) {
 }
 
 function paint(root) {
-  // 先把超过约 10 个字的标签拆成几行，再量这一棵树里所有行宽；
-  // 收着的那几支也一起量，展开时不用再量。
+  // 先把超预算的标签拆成几行，再量这一棵树里所有行宽；
+  // 收着的那几支也一起量，展开时不用再量。预算按角色分：
+  // 根基本单行，分支早点换行保持骨架窄，叶子短项尽量保持单行。
   const all = [];
-  const collect = function (node) {
-    node.lines = wrapLines(node.text);
+  const collect = function (node, isRoot) {
+    const budget = isRoot
+      ? ROOT_WRAP_UNITS
+      : node.children.length
+        ? BRANCH_WRAP_UNITS
+        : LEAF_WRAP_UNITS;
+    node.lines = wrapLines(node.text, budget);
     node.lines.forEach(function (line) {
       all.push(line);
     });
-    node.children.forEach(collect);
+    node.children.forEach(function (kid) {
+      collect(kid, false);
+    });
   };
-  collect(root);
+  collect(root, true);
   const widths = measureWidths(all);
 
   const cols = [];
