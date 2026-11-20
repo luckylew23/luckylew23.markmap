@@ -9,7 +9,8 @@
 // 有子节点的节点，右侧线条汇聚的地方画一个小圆圈：点它收起或展开子节点，
 // 圈里一道横线是展开着，再加一道竖线是收着。点末端节点跳到笔记里的那一行。
 // 节点框的宽窄按真正画出来的文字量：页面外的尺子用同一套字体量一遍，
-// 中文、emoji、主题换的字体都不会冒出框外。
+// 中文、emoji、主题换的字体都不会冒出框外。一行超过约 10 个字的标签拆成
+// 几行画进高一点的方框，长图不至于被一条很长的节点拉得太宽。
 const api = acquireTextusApi();
   const t = api.t;
 
@@ -18,6 +19,12 @@ const ROW = 26;
 const COL_GAP = 26;
 const PAD_X = 7;
 const FONT = 12;
+// 长标签换行：一行超过约 10 个字的宽度就拆成几行，画进一个高一些的方框。
+// 中文、全角一个字算 2 份宽，半角的英文数字算 1 份；20 份正好是 10 个字。
+const WRAP_UNITS = 20;
+// 多行方框的行高和上下留白；单行的框仍是原来的 18 像素高。
+const LINE_H = 16;
+const PAD_Y = 4;
 // 收起、展开用的小圆圈：半径和圈里那两道线的一半长度。
 const FOLD_R = 5.5;
 const FOLD_ARM = 2.5;
@@ -85,6 +92,80 @@ function escapeXml(text) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+// 一段字的宽：中文、全角算 2 份，半角的英文数字算 1 份。
+function unitsOf(text) {
+  let units = 0;
+  for (const ch of String(text)) units += ch.codePointAt(0) > 0xff ? 2 : 1;
+  return units;
+}
+
+// 把一段字拆成小块：中文一个字一块（字和字之间都能断），半角的英文数字
+// 连成一个词（词中间不断），空格自己是一块，留着当词的边界。
+function atomsOf(text) {
+  const atoms = [];
+  let word = "";
+  const flush = function () {
+    if (word) {
+      atoms.push({ text: word, units: unitsOf(word) });
+      word = "";
+    }
+  };
+  for (const ch of String(text)) {
+    if (/\s/.test(ch)) {
+      flush();
+      atoms.push({ text: " ", units: 1, space: true });
+    } else if (ch.codePointAt(0) > 0xff) {
+      flush();
+      atoms.push({ text: ch, units: 2 });
+    } else {
+      word += ch;
+    }
+  }
+  flush();
+  return atoms;
+}
+
+// 标签超过约 10 个字的宽度就拆成几行：中文哪儿都能断，英文数字按词断，
+// 一行都装不下的长词硬切开。行首行尾的空格丢掉。没超的照旧一行。
+function wrapLines(text) {
+  if (unitsOf(text) <= WRAP_UNITS) return [text];
+  const lines = [];
+  let line = "";
+  let units = 0;
+  for (const atom of atomsOf(text)) {
+    if (atom.space) {
+      if (line) {
+        line += atom.text;
+        units += atom.units;
+      }
+      continue;
+    }
+    if (line && units + atom.units > WRAP_UNITS) {
+      lines.push(line.trim());
+      line = "";
+      units = 0;
+    }
+    if (atom.units > WRAP_UNITS) {
+      // 一个词比一行还宽：按字硬切开，分几行放。
+      for (const ch of atom.text) {
+        const u = ch.codePointAt(0) > 0xff ? 2 : 1;
+        if (units + u > WRAP_UNITS) {
+          lines.push(line.trim());
+          line = "";
+          units = 0;
+        }
+        line += ch;
+        units += u;
+      }
+      continue;
+    }
+    line += atom.text;
+    units += atom.units;
+  }
+  if (line.trim()) lines.push(line.trim());
+  return lines.length ? lines : [text];
 }
 
 // 文件名：路径的最后一段去掉扩展名，不带路径。
@@ -212,10 +293,14 @@ function scaled(width, height, fit) {
 }
 
 function paint(root) {
-  // 先量这一棵树里所有节点的字，收着的那几支也一起量，展开时不用再量。
+  // 先把超过约 10 个字的标签拆成几行，再量这一棵树里所有行宽；
+  // 收着的那几支也一起量，展开时不用再量。
   const all = [];
   const collect = function (node) {
-    all.push(node.text);
+    node.lines = wrapLines(node.text);
+    node.lines.forEach(function (line) {
+      all.push(line);
+    });
     node.children.forEach(collect);
   };
   collect(root);
@@ -233,19 +318,33 @@ function paint(root) {
     // 照旧画加号小圆圈，点它把层级放开一层。
     node.truncated =
       node.children.length > 0 && !node.collapsed && depth >= levels - 1;
-    // 框 = 量出来的字宽 + 两边留白 + 1 像素，圆角处也不会压到字上。
-    node.w = Math.ceil(widths.get(node.text) || 0) + PAD_X * 2 + 1;
+    // 框 = 最长的一行宽 + 两边留白 + 1 像素，圆角处也不会压到字上；
+    // 一行照旧 18 像素高，多行一行行叠高。节点位置统一记在框的上下中点上。
+    let wide = 0;
+    node.lines.forEach(function (line) {
+      const w = widths.get(line) || 0;
+      if (w > wide) wide = w;
+    });
+    node.w = Math.ceil(wide) + PAD_X * 2 + 1;
+    node.h =
+      node.lines.length === 1 ? 18 : node.lines.length * LINE_H + PAD_Y * 2;
     cols[depth] = Math.max(cols[depth] || 0, node.w);
     const kids = node.collapsed || node.truncated ? [] : node.children;
     if (!kids.length) {
-      node.top = rows * ROW;
-      rows += 1;
+      // 末端节点自成一个（或多个）格，框在格子里上下居中。
+      const slot = Math.max(1, Math.ceil(node.h / ROW));
+      node.cy = rows * ROW + (slot * ROW) / 2;
+      rows += slot;
     } else {
       kids.forEach(function (kid, index) {
         walk(kid, depth + 1, key + "/" + index);
       });
-      node.top = (kids[0].top + kids[kids.length - 1].top) / 2;
+      // 有分支的节点摆在第一个和最后一个孩子的框中间。
+      node.cy = (kids[0].cy + kids[kids.length - 1].cy) / 2;
     }
+    // 自己的框比孩子占的格子还高时（只有一个孩子、或这一支很短），往下多
+    // 占几格，别压到上下相邻的节点。
+    rows = Math.max(rows, Math.ceil((node.cy + node.h / 2) / ROW));
   };
   walk(root, 0, "");
 
@@ -276,10 +375,10 @@ function paint(root) {
   const nodes = document.createElementNS(SVG, "g");
 
   const add = function (node, parent) {
-    const cy = node.top + ROW / 2;
+    const cy = node.cy;
     if (parent) {
       const px = xs[parent.depth] + parent.w;
-      const py = parent.top + ROW / 2;
+      const py = parent.cy;
       const cx = xs[node.depth];
       const bend = Math.max(8, (cx - px) * 0.5);
       edges.push({ px: px, py: py, cx: cx, cy: cy, bend: bend });
@@ -303,14 +402,27 @@ function paint(root) {
     tip.textContent = node.text;
     const rect = document.createElementNS(SVG, "rect");
     rect.setAttribute("x", String(xs[node.depth]));
-    rect.setAttribute("y", String(cy - 9));
+    rect.setAttribute("y", String(cy - node.h / 2));
     rect.setAttribute("width", String(node.w));
-    rect.setAttribute("height", "18");
+    rect.setAttribute("height", String(node.h));
     rect.setAttribute("rx", "4");
     const label = document.createElementNS(SVG, "text");
     label.setAttribute("x", String(xs[node.depth] + PAD_X));
-    label.setAttribute("y", String(cy + 4));
-    label.textContent = node.text;
+    if (node.lines.length === 1) {
+      label.setAttribute("y", String(cy + 4));
+      label.textContent = node.lines[0];
+    } else {
+      // 多行：第一行的基线往上挪，后面的行用 dy 一行一行排，整块在框里居中。
+      const first = cy + 4 - ((node.lines.length - 1) * LINE_H) / 2;
+      node.lines.forEach(function (line, index) {
+        const span = document.createElementNS(SVG, "tspan");
+        span.setAttribute("x", String(xs[node.depth] + PAD_X));
+        if (index === 0) span.setAttribute("y", String(first));
+        else span.setAttribute("dy", String(LINE_H));
+        span.textContent = line;
+        label.append(span);
+      });
+    }
     group.append(tip, rect, label);
     // 有子节点：在节点右端、子节点连线汇聚的地方画个小圆圈，点它收起或展开。
     // 收起的和被「展示层级」挡住的都画加号；只有收起的才画虚线的框。
@@ -339,9 +451,11 @@ function paint(root) {
     }
     items.push({
       x: xs[node.depth],
-      y: cy - 9,
+      y: cy - node.h / 2,
       w: node.w,
-      text: node.text,
+      h: node.h,
+      cy: cy,
+      lines: node.lines,
       root: node.depth === 0,
       branch: node.children.length > 0,
       folded: node.collapsed,
@@ -449,7 +563,9 @@ function exportMarkup() {
         item.y +
         '" width="' +
         item.w +
-        '" height="18" rx="4" fill="' +
+        '" height="' +
+        item.h +
+        '" rx="4" fill="' +
         escapeXml(fill) +
         '" stroke="' +
         escapeXml(stroke) +
@@ -457,11 +573,11 @@ function exportMarkup() {
         (item.folded ? ' stroke-dasharray="3 2"' : "") +
         "/>",
     );
+    // 多行的标签一行一个 tspan，和画在页面里时同一套基线。
+    const first = item.cy + 4 - ((item.lines.length - 1) * LINE_H) / 2;
     out.push(
       '<text x="' +
         (item.x + PAD_X) +
-        '" y="' +
-        (item.y + 13) +
         '" font-family="' +
         escapeXml(family) +
         '" font-size="' +
@@ -469,7 +585,19 @@ function exportMarkup() {
         '" fill="' +
         escapeXml(item.root ? "#ffffff" : text) +
         '">' +
-        escapeXml(item.text) +
+        item.lines
+          .map(function (line, i) {
+            return (
+              '<tspan x="' +
+              (item.x + PAD_X) +
+              '" y="' +
+              (first + i * LINE_H) +
+              '">' +
+              escapeXml(line) +
+              "</tspan>"
+            );
+          })
+          .join("") +
         "</text>",
     );
     // 收起、展开用的小圆圈也跟着画进图片里。

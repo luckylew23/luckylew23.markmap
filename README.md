@@ -4,6 +4,7 @@ Draws the whole note as a mind map: every heading and list item in the note beco
 
 - Open it from the command palette, the editor's context menu ("Open Mind Map"), or the mind-map icon beside the outline in the sidebar. The full picture opens in a tab (or in the sidebar, from the sidebar icon); the note's changes repaint the map as you type.
 - When the note has exactly one top-level heading, that heading is the root; otherwise the root is the note's file name (without the path). Headings and lists are its branches.
+- A label longer than about ten characters' width is wrapped into several lines inside a taller box, so one long node doesn't stretch the whole map sideways.
 - "Levels" next to the zoom controls draws the map that many levels deep: 4 by default, up to 10. A node whose children the limit hides keeps its small circle, drawn as a plus; clicking it reveals one more level.
 - A node with children has a small circle at the right end, where the child lines converge: a horizontal bar means unfolded, plus a vertical one means folded. Click it to fold or unfold the children.
 - The map's top-right corner zooms: − shrinks, + grows, and the percentage in the middle is relative to the size that just fits.
