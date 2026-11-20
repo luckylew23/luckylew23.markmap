@@ -1,0 +1,52 @@
+{
+  "author": "the app's AI",
+  "contributes": {
+    "commands": [
+      {
+        "command": "luckylew23.markmap.open",
+        "title": "打开思维导图"
+      }
+    ],
+    "menus": {
+      "app/plugins": [
+        {
+          "command": "luckylew23.markmap.open"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "luckylew23.markmap.open",
+          "when": "documentOpen"
+        }
+      ]
+    },
+    "sidebarTabs": [
+      {
+        "icon": "tab.svg",
+        "id": "luckylew23.markmap.panel",
+        "title": "思维导图",
+        "type": "webview"
+      }
+    ],
+    "views": [
+      {
+        "id": "luckylew23.markmap.view",
+        "title": "思维导图",
+        "type": "webview"
+      }
+    ]
+  },
+  "description": "把当前笔记整篇画成思维导图：直接在标签页里看全图，可以缩放、抓着鼠标拖动，还能把图导出成图片。",
+  "engines": {
+    "textus": ">=1.3.10"
+  },
+  "id": "luckylew23.markmap",
+  "main": "host.js",
+  "name": "思维导图侧栏",
+  "permissions": [
+    "editor.read",
+    "files.write"
+  ],
+  "publisher": "luckylew23",
+  "version": "0.8.0"
+}
