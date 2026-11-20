@@ -1,0 +1,155 @@
+/* 思维导图的页面：颜色都取主题自己的变量，换主题不用重画。
+   页面整页不滚，图在自己的框里滚：抓着鼠标拖动才能平移。 */
+html,
+body {
+  height: 100%;
+  margin: 0;
+  background: transparent;
+  color: var(--ui-text);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+}
+body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.toolbar {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+}
+.grow {
+  flex: 1;
+}
+#name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--ui-muted);
+}
+#name:empty {
+  display: none;
+}
+#full,
+#export {
+  flex: none;
+}
+.zoom {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+}
+.zoom button {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--shape-s);
+  background: var(--ui-subtle);
+  color: var(--ui-text);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+.zoom button:hover:not(:disabled) {
+  border-color: var(--ui-accent);
+}
+.zoom button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+#zoom-label {
+  min-width: 3.2em;
+  text-align: center;
+  color: var(--ui-muted);
+  font-variant-numeric: tabular-nums;
+}
+#map {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  cursor: grab;
+  padding: var(--space-2);
+}
+#map.panning {
+  cursor: grabbing;
+  user-select: none;
+}
+svg.map {
+  display: block;
+}
+.link {
+  fill: none;
+  stroke: var(--ui-border);
+  stroke-width: 1.2;
+}
+.node {
+  cursor: pointer;
+}
+.node rect {
+  fill: var(--ui-subtle);
+  stroke: var(--ui-border);
+}
+.node.branch rect {
+  stroke: var(--ui-accent);
+}
+.node.root rect {
+  fill: var(--ui-accent);
+  stroke: var(--ui-accent);
+}
+/* 节点上的字和量字宽用的尺子用同一套字号，量出来的宽就是画出来的宽。 */
+.node text,
+.ruler text {
+  font-size: 12px;
+}
+.node text {
+  fill: var(--ui-text);
+}
+.node.root text {
+  fill: #fff;
+}
+.node:hover rect {
+  opacity: 0.82;
+}
+.node.folded rect {
+  stroke-dasharray: 3 2;
+}
+/* 节点右端的收起、展开小圆圈：底色挡住从它那儿穿过的连线，圈里的横线是展开着。 */
+.fold {
+  fill: var(--ui-bg);
+  stroke: var(--ui-accent);
+  stroke-width: 1.2;
+}
+.fold-sign {
+  fill: none;
+  stroke: var(--ui-accent);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+}
+.node:hover .fold {
+  fill: var(--ui-subtle);
+}
+/* 量字宽用的尺子：挪到页面左边外面，摆得下最长的一行。 */
+.ruler {
+  position: absolute;
+  left: -10000px;
+  top: 0;
+  width: 2000px;
+  height: 100px;
+  overflow: hidden;
+  pointer-events: none;
+}
+#empty {
+  margin: 0;
+  padding: var(--space-3);
+  color: var(--ui-muted);
+}
