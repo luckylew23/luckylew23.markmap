@@ -3,8 +3,10 @@
 // 侧栏和新标签页里画的是同一张图：右上角的 − / + 缩放，
 // 鼠标滚轮和触屏双指捏合也能缩（围着指针或两指的中点），两指并拢拖着走就是平移；
 // 按住鼠标（左键或右键）在图上拖着走可以平移；笔记改动时重画。
-// 工具栏里的「展示层级」只画到第几层：默认 4 层，最高 10 层；被层级挡住的
-// 孩子也画个加号小圆圈，点它把层级放开一层。
+// 工具栏里的「展示层级」只画到第几层，最高 10 层：侧栏里默认 2 层、标签页里
+// 默认 3 层（侧栏窄，少画几层才看得清）。换层级等于重新定整张图的深浅，手工
+// 收起的分支也一起放开，免得有的分支不听层级。被层级挡住的孩子也画个加号
+// 小圆圈，点它把层级放开一层。
 // 「导出图片」把整张图重画成一张独立的 SVG 交给 host.js 存成文件。
 // 有子节点的节点，右侧线条汇聚的地方画一个小圆圈：点它收起或展开子节点，
 // 圈里一道横线是展开着，再加一道竖线是收着。点末端节点跳到笔记里的那一行。
@@ -32,12 +34,16 @@ const PAD_Y = 4;
 // 收起、展开用的小圆圈：半径和圈里那两道线的一半长度。
 const FOLD_R = 5.5;
 const FOLD_ARM = 2.5;
-// 缩放档位：1 是「刚好放得下」的尺寸，右上角显示的是相对它的百分比。
-// 按钮（和换笔记时的 100%）一档一档走；滚轮和捏合不按档，连着缩，档位取最近的一档。
+// 缩放档位：1 是图本来的大小（侧栏和标签页里的字一样大），右上角显示的是相对
+// 它的百分比。按钮（和换笔记时的 100%）一档一档走；滚轮和捏合不按档，连着缩，
+// 档位取最近的一档。
 const STEPS = [0.3, 0.4, 0.5, 0.67, 0.8, 1, 1.25, 1.5, 2, 2.5, 3, 4];
 // 工具栏里的「展示层级」：只画到第几层，根是第 1 层；最多 10 层。
 const MAX_LEVELS = 10;
-let levels = 4;
+// 默认画几层：侧栏窄，两层就看清了骨架；整张图的标签页宽，三层。
+const SIDEBAR_LEVELS = 2;
+const TAB_LEVELS = 3;
+let levels = SIDEBAR_LEVELS;
 
 const box = document.getElementById("map");
 const empty = document.getElementById("empty");
@@ -50,7 +56,7 @@ const zoomIn = document.getElementById("zoom-in");
 const zoomOut = document.getElementById("zoom-out");
 const measure = document.createElement("canvas").getContext("2d");
 
-// 「展示层级」的下拉框：1 到 10 层，默认 4 层。
+// 「展示层级」的下拉框：1 到 10 层，默认几层由画在哪儿（侧栏 / 标签页）定。
 for (let i = 1; i <= MAX_LEVELS; i++) {
   const option = document.createElement("option");
   option.value = String(i);
@@ -67,6 +73,8 @@ document.body.append(ruler);
 
 let source = null;
 let drawnWidth = 0;
+// 这一页在哪儿画：侧栏还是整张图的标签页，决定默认层级的。
+let drawnMode = "";
 // 页面上还没有宽度时等下一帧再画，最多等这么久（约两秒）。
 let waiting = 0;
 // 画好的图和它的原尺寸：换档时只改 SVG 画出来的大小，不重新排。
@@ -288,11 +296,11 @@ function measureWidths(texts) {
   return widths;
 }
 
-// 图上画出来的大小：原尺寸乘上「刚好放得下」的比例，再乘缩放档位。
-function scaled(width, height, fit) {
+// 图上画出来的大小：原尺寸乘缩放档位。
+function scaled(width, height) {
   return {
-    w: Math.max(1, Math.round(width * fit * zoom)),
-    h: Math.max(1, Math.round(height * fit * zoom)),
+    w: Math.max(1, Math.round(width * zoom)),
+    h: Math.max(1, Math.round(height * zoom)),
   };
 }
 
@@ -369,18 +377,15 @@ function paint(root) {
   width = Math.max(1, width - COL_GAP);
   const height = Math.max(1, rows * ROW);
 
-  // 窄的地方（侧栏）先按比例缩小，缩到字太小就不再缩，改为横向滚动；
-  // 标签页宽，宽度够就按原尺寸画。右上角的缩放按钮在它的基础上再放大缩小。
-  const available = box.clientWidth - 8;
-  const fit = Math.max(0.6, Math.min(1, available / width));
-
+  // 按原尺寸画：侧栏里放不下就横向滚动，字和标签页里一样大——不为塞下整张图
+  // 把字缩到看不清。右上角的缩放按钮在这上面再放大缩小。
   const svg = document.createElementNS(SVG, "svg");
   svg.setAttribute("class", "map");
   svg.setAttribute("viewBox", "0 0 " + width + " " + height);
   const edges = [];
   const items = [];
-  view = { svg: svg, width: width, height: height, fit: fit, edges: edges, items: items };
-  const size = scaled(width, height, fit);
+  view = { svg: svg, width: width, height: height, edges: edges, items: items };
+  const size = scaled(width, height);
   svg.setAttribute("width", String(size.w));
   svg.setAttribute("height", String(size.h));
   const links = document.createElementNS(SVG, "g");
@@ -483,8 +488,7 @@ function paint(root) {
         if (node.children.length) {
           if (node.truncated) {
             // 被「展示层级」挡住的节点：点加号把层级放开一层，让它的孩子露出来。
-            levels = Math.min(MAX_LEVELS, node.depth + 2);
-            levelsSelect.value = String(levels);
+            setLevels(node.depth + 2);
           } else if (folded.has(node.key)) {
             folded.delete(node.key);
           } else {
@@ -678,7 +682,7 @@ function zoomAt(next, clientX, clientY) {
   const offY = clientY - rect.top;
   zoom = next;
   step = nearestStep(zoom);
-  const size = scaled(view.width, view.height, view.fit);
+  const size = scaled(view.width, view.height);
   if (size.w === oldW) {
     updateZoom();
     return;
@@ -756,10 +760,17 @@ zoomOut.addEventListener("click", function () {
   }
 });
 
-// 下拉框换「展示层级」：只画到第几层，画完仍保持 100% 的缩放。
+// 换「展示层级」：层级管整张图的深浅，手工收起的分支也一起放开，否则那些分支
+// 看着不听层级的话。画完仍保持原来的缩放。
+function setLevels(next) {
+  levels = Math.min(MAX_LEVELS, Math.max(1, next));
+  levelsSelect.value = String(levels);
+  folded.clear();
+}
+
 levelsSelect.addEventListener("change", function () {
   try {
-    levels = Math.min(MAX_LEVELS, Math.max(1, Number(levelsSelect.value) || levels));
+    setLevels(Number(levelsSelect.value) || levels);
     draw();
   } catch (err) {
     show(String((err && err.message) || err));
@@ -898,6 +909,12 @@ box.addEventListener("touchcancel", pinchEnd);
 function onMessage(message) {
   if (!message || message.type !== "text") return;
   const mode = message.mode === "tab" ? "tab" : "sidebar";
+  // 第一笔消息才知道自己在哪儿画：侧栏里默认 2 层，整张图的标签页里默认 3 层。
+  // 之后换笔记、打字都不动层级，用户自己选的那一层留着。
+  if (mode !== drawnMode) {
+    drawnMode = mode;
+    setLevels(mode === "tab" ? TAB_LEVELS : SIDEBAR_LEVELS);
+  }
   // 标签页的标题就是笔记名，页面上不用再写一遍；侧栏里写出来。
   fullButton.hidden = mode === "tab" || !!message.problem;
   nameLabel.textContent = mode === "tab" ? "" : fileName(message.path);
