@@ -40,6 +40,26 @@ body {
 #export {
   flex: none;
 }
+/* 「展示方式」下拉框只放箭头图标，和「展示层级」同一套皮肤，摆在它左边。 */
+.layout {
+  display: flex;
+  flex: none;
+  align-items: center;
+}
+.layout select {
+  height: 22px;
+  padding: 0 var(--space-1);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--shape-s);
+  background: var(--ui-subtle);
+  color: var(--ui-text);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+.layout select:hover {
+  border-color: var(--ui-accent);
+}
 /* 「展示层级」下拉框和按钮同一套样式，紧挨着缩放按钮放在它前面。 */
 .levels {
   display: flex;

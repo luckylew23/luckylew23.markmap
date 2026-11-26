@@ -1,4 +1,4 @@
-// 思维导图：当前笔记的标题和列表画成一棵向右展开的树，根在左上。
+// 思维导图：当前笔记的标题和列表画成一棵树，默认从左往右长，根在左上。
 // 全文只有一个一级标题时它就是根，否则根是这篇笔记的文件名。
 // 侧栏和新标签页里画的是同一张图：右上角的 − / + 缩放，
 // 鼠标滚轮和触屏双指捏合也能缩（围着指针或两指的中点），两指并拢拖着走就是平移；
@@ -7,6 +7,10 @@
 // 默认 3 层（侧栏窄，少画几层才看得清）。换层级等于重新定整张图的深浅，手工
 // 收起的分支也一起放开，免得有的分支不听层级。被层级挡住的孩子也画个加号
 // 小圆圈，点它把层级放开一层。
+// 工具栏里的「展示方式」管这棵树往哪个方向长：默认从左往右（LR），也可以从上
+// 往下（Top-Down）、从下往上（Bottom-Up）、从右往左（R-L），或者围着中心摊成
+// 星形（Star）。下拉框里用箭头当图标，指哪儿长哪儿；换方向只是把同一棵排好位置
+// 的树转到另一根轴上，方块里的字照样横着写，层级、收起、缩放都不动。
 // 「导出图片」把整张图重画成一张独立的 SVG 交给 host.js 存成文件。
 // 有子节点的节点，右侧线条汇聚的地方画一个小圆圈：点它收起或展开子节点，
 // 圈里一道横线是展开着，再加一道竖线是收着。点末端节点跳到笔记里的那一行。
@@ -46,6 +50,10 @@ const MAX_LEVELS = 10;
 const SIDEBAR_LEVELS = 2;
 const TAB_LEVELS = 3;
 let levels = SIDEBAR_LEVELS;
+// 工具栏里的「展示方式」：这棵树往哪个方向长。lr 是默认，跟别处的思维导图一样
+// 从左往右；star 不按轴排，围着中心摊开，所以单独认。
+const LAYOUTS = ["lr", "tb", "bt", "rl", "star"];
+let layout = LAYOUTS[0];
 
 const box = document.getElementById("map");
 const empty = document.getElementById("empty");
@@ -53,10 +61,27 @@ const nameLabel = document.getElementById("name");
 const fullButton = document.getElementById("full");
 const exportButton = document.getElementById("export");
 const levelsSelect = document.getElementById("levels");
+const layoutSelect = document.getElementById("layout");
 const zoomLabel = document.getElementById("zoom-label");
 const zoomIn = document.getElementById("zoom-in");
 const zoomOut = document.getElementById("zoom-out");
 const measure = document.createElement("canvas").getContext("2d");
+
+// 「展示方式」的下拉框：只写箭头，指哪儿长哪儿，不占工具栏的宽度；名字写在
+// 下拉框的提示里（悬停能看到）。
+const GLYPHS = { lr: "→", tb: "↓", bt: "↑", rl: "←", star: "✳" };
+for (const id of LAYOUTS) {
+  const option = document.createElement("option");
+  option.value = id;
+  option.textContent = GLYPHS[id];
+  layoutSelect.append(option);
+}
+layoutSelect.value = layout;
+
+// 提示里写现在这个方向叫什么，换方向时跟着换。
+function updateLayoutTitle() {
+  layoutSelect.title = `${t("layout")} · ${t("layout." + layout)}`;
+}
 
 // 「展示层级」的下拉框：1 到 10 层，默认几层由画在哪儿（侧栏 / 标签页）定。
 for (let i = 1; i <= MAX_LEVELS; i++) {
@@ -333,10 +358,16 @@ function paint(root) {
   collect(root, true);
   const widths = measureWidths(all);
 
-  const cols = [];
-  let rows = 0;
+  // 往哪个方向长：层级沿一根轴一层层往外推，兄弟沿另一根轴排；「星形」另算。
+  // 方块里的字永远是横的，所以从上往下、从下往上长的时候，一层按框高排、兄弟
+  // 按框宽排；从左往右、从右往左长的时候反过来。
+  const upDown = layout === "tb" || layout === "bt";
+  const star = layout === "star";
+  // 每一层沿层方向占多宽（左右长时是框宽，上下长时是框高）。
+  const bands = [];
+  // 兄弟沿另一根轴的游标：末端的节点一个个往后排，有分支的摆在孩子中间。
+  let cross = 0;
 
-  // 末端节点自上而下各占一行，有分支的节点摆在第一个和最后一个孩子中间。
   const walk = function (node, depth, key) {
     node.depth = depth;
     node.key = key;
@@ -355,34 +386,87 @@ function paint(root) {
     node.w = Math.ceil(wide) + PAD_X * 2 + 1;
     node.h =
       node.lines.length === 1 ? 18 : node.lines.length * LINE_H + PAD_Y * 2;
-    cols[depth] = Math.max(cols[depth] || 0, node.w);
+    bands[depth] = Math.max(bands[depth] || 0, upDown ? node.h : node.w);
     const kids = node.collapsed || node.truncated ? [] : node.children;
     if (!kids.length) {
-      // 末端节点自成一个（或多个）格，框在格子里上下居中。
-      const slot = Math.max(1, Math.ceil(node.h / ROW));
-      node.cy = rows * ROW + (slot * ROW) / 2;
-      rows += slot;
+      // 末端节点自己占一段，框在段里居中。
+      const span = Math.max(ROW, upDown ? node.w : node.h);
+      node.cross = cross + span / 2;
+      cross += span;
     } else {
       kids.forEach(function (kid, index) {
         walk(kid, depth + 1, key + "/" + index);
       });
       // 有分支的节点摆在第一个和最后一个孩子的框中间。
-      node.cy = (kids[0].cy + kids[kids.length - 1].cy) / 2;
+      node.cross = (kids[0].cross + kids[kids.length - 1].cross) / 2;
     }
-    // 自己的框比孩子占的格子还高时（只有一个孩子、或这一支很短），往下多
-    // 占几格，别压到上下相邻的节点。
-    rows = Math.max(rows, Math.ceil((node.cy + node.h / 2) / ROW));
+    // 自己的框比孩子占的地方还长时（只有一个孩子、或这一支很短），把游标往外
+    // 推，别压到同一层上相邻的节点。
+    cross = Math.max(cross, node.cross + (upDown ? node.w : node.h) / 2);
   };
   walk(root, 0, "");
 
-  const xs = [];
-  let width = 0;
-  for (let depth = 0; depth < cols.length; depth++) {
-    xs[depth] = width;
-    width += (cols[depth] || 0) + COL_GAP;
+  // 每一层的起点：一层比一层往外推，中间留 COL_GAP。
+  const starts = [];
+  let along = 0;
+  for (let depth = 0; depth < bands.length; depth++) {
+    starts[depth] = along;
+    along += (bands[depth] || 0) + COL_GAP;
   }
-  width = Math.max(1, width - COL_GAP);
-  const height = Math.max(1, rows * ROW);
+  along = Math.max(1, along - COL_GAP);
+  const span = Math.max(1, cross);
+
+  // 摆位置：根在最外面那一头，层数越深越往里；rl、bt 从对面那头量起。
+  // 「星形」把兄弟轴当角度、层数当半径，围着中心摊开。
+  const placed = [];
+  const place = function (node) {
+    if (star) {
+      const radius =
+        node.depth === 0 ? 0 : starts[node.depth] + (bands[node.depth] || 0) / 2;
+      const angle = (node.cross / span) * Math.PI * 2 - Math.PI / 2;
+      node.cx = Math.cos(angle) * radius;
+      node.cy = Math.sin(angle) * radius;
+    } else if (upDown) {
+      node.cx = node.cross;
+      node.cy =
+        layout === "tb"
+          ? starts[node.depth] + node.h / 2
+          : along - starts[node.depth] - node.h / 2;
+    } else {
+      node.cy = node.cross;
+      node.cx =
+        layout === "lr"
+          ? starts[node.depth] + node.w / 2
+          : along - starts[node.depth] - node.w / 2;
+    }
+    node.x = node.cx - node.w / 2;
+    node.y = node.cy - node.h / 2;
+    placed.push(node);
+    const kids = node.collapsed || node.truncated ? [] : node.children;
+    kids.forEach(place);
+  };
+  place(root);
+
+  // 图的大小按所有框算（四周留出收起小圆圈的地方），再把整张图挪到从 0 开始：
+  // 「星形」的中心在原点、坐标有负的，挪一下也照样落在画布上。
+  let left = Infinity;
+  let top = Infinity;
+  let right = -Infinity;
+  let bottom = -Infinity;
+  placed.forEach(function (node) {
+    left = Math.min(left, node.x - FOLD_R - 3);
+    top = Math.min(top, node.y - FOLD_R - 3);
+    right = Math.max(right, node.x + node.w + FOLD_R + 3);
+    bottom = Math.max(bottom, node.y + node.h + FOLD_R + 3);
+  });
+  const width = Math.max(1, Math.ceil(right - left));
+  const height = Math.max(1, Math.ceil(bottom - top));
+  placed.forEach(function (node) {
+    node.x -= left;
+    node.y -= top;
+    node.cx -= left;
+    node.cy -= top;
+  });
 
   // 按原尺寸画：侧栏里放不下就横向滚动，字和标签页里一样大——不为塞下整张图
   // 把字缩到看不清。右上角的缩放按钮在这上面再放大缩小。
@@ -398,20 +482,54 @@ function paint(root) {
   const links = document.createElementNS(SVG, "g");
   const nodes = document.createElementNS(SVG, "g");
 
+  // 星形的连线从框边上出发：从框中心朝对方走，碰到框边就停。
+  const edgePoint = function (node, dx, dy) {
+    const across = dx === 0 ? Infinity : node.w / 2 / Math.abs(dx);
+    const down = dy === 0 ? Infinity : node.h / 2 / Math.abs(dy);
+    const t = Math.min(across, down);
+    return { x: node.cx + dx * t, y: node.cy + dy * t };
+  };
+
   const add = function (node, parent) {
     const cy = node.cy;
     if (parent) {
-      const px = xs[parent.depth] + parent.w;
-      const py = parent.cy;
-      const cx = xs[node.depth];
-      const bend = Math.max(8, (cx - px) * 0.5);
-      edges.push({ px: px, py: py, cx: cx, cy: cy, bend: bend });
+      // 连线：左右长是从左边框的中间弯到另一边，上下长是上下边框；星形是直的一条。
+      // 同一段路径记进 edges，导出图片时照着重画一遍。
+      let d = "";
+      if (star) {
+        const dx = node.cx - parent.cx;
+        const dy = node.cy - parent.cy;
+        const from = edgePoint(parent, dx, dy);
+        const to = edgePoint(node, -dx, -dy);
+        d = "M" + from.x + " " + from.y + "L" + to.x + " " + to.y;
+      } else if (upDown) {
+        const out = layout === "tb" ? 1 : -1;
+        const px = parent.cx;
+        const py = layout === "tb" ? parent.y + parent.h : parent.y;
+        const qx = node.cx;
+        const qy = layout === "tb" ? node.y : node.y + node.h;
+        const bend = Math.max(8, Math.abs(qy - py) * 0.5);
+        d =
+          "M" + px + " " + py +
+          "C" + px + " " + (py + out * bend) +
+          " " + qx + " " + (qy - out * bend) +
+          " " + qx + " " + qy;
+      } else {
+        const out = layout === "lr" ? 1 : -1;
+        const px = layout === "lr" ? parent.x + parent.w : parent.x;
+        const py = parent.cy;
+        const qx = layout === "lr" ? node.x : node.x + node.w;
+        const bend = Math.max(8, Math.abs(qx - px) * 0.5);
+        d =
+          "M" + px + " " + py +
+          "C" + (px + out * bend) + " " + py +
+          " " + (qx - out * bend) + " " + cy +
+          " " + qx + " " + cy;
+      }
+      edges.push({ d: d });
       const path = document.createElementNS(SVG, "path");
       path.setAttribute("class", "link");
-      path.setAttribute(
-        "d",
-        "M" + px + " " + py + "C" + (px + bend) + " " + py + " " + (cx - bend) + " " + cy + " " + cx + " " + cy,
-      );
+      path.setAttribute("d", d);
       links.append(path);
     }
     const group = document.createElementNS(SVG, "g");
@@ -430,8 +548,8 @@ function paint(root) {
     let frame = null;
     if (node.heading) {
       frame = document.createElementNS(SVG, "rect");
-      frame.setAttribute("x", String(xs[node.depth]));
-      frame.setAttribute("y", String(cy - node.h / 2));
+      frame.setAttribute("x", String(node.x));
+      frame.setAttribute("y", String(node.y));
       frame.setAttribute("width", String(node.w));
       frame.setAttribute("height", String(node.h));
       frame.setAttribute("rx", "4");
@@ -439,13 +557,13 @@ function paint(root) {
       const y = underlineY(cy, node.lines.length);
       frame = document.createElementNS(SVG, "line");
       frame.setAttribute("class", "underline");
-      frame.setAttribute("x1", String(xs[node.depth]));
+      frame.setAttribute("x1", String(node.x));
       frame.setAttribute("y1", String(y));
-      frame.setAttribute("x2", String(xs[node.depth] + node.w));
+      frame.setAttribute("x2", String(node.x + node.w));
       frame.setAttribute("y2", String(y));
     }
     const label = document.createElementNS(SVG, "text");
-    label.setAttribute("x", String(xs[node.depth] + PAD_X));
+    label.setAttribute("x", String(node.x + PAD_X));
     if (node.lines.length === 1) {
       label.setAttribute("y", String(cy + 4));
       label.textContent = node.lines[0];
@@ -454,7 +572,7 @@ function paint(root) {
       const first = cy + 4 - ((node.lines.length - 1) * LINE_H) / 2;
       node.lines.forEach(function (line, index) {
         const span = document.createElementNS(SVG, "tspan");
-        span.setAttribute("x", String(xs[node.depth] + PAD_X));
+        span.setAttribute("x", String(node.x + PAD_X));
         if (index === 0) span.setAttribute("y", String(first));
         else span.setAttribute("dy", String(LINE_H));
         span.textContent = line;
@@ -462,17 +580,31 @@ function paint(root) {
       });
     }
     group.append(tip, frame, label);
-    // 有子节点：在节点右端、子节点连线汇聚的地方画个小圆圈，点它收起或展开。
-    // 收起的和被「展示层级」挡住的都画加号；只有收起的才画虚线的框。
+    // 有子节点：在朝孩子那一端的框外面、子节点连线汇聚的地方画个小圆圈，
+    // 点它收起或展开。收起的和被「展示层级」挡住的都画加号；只有收起的才画虚线的框。
     let fold = null;
     if (node.children.length) {
       const foldedHere = node.collapsed || node.truncated;
-      const fx = xs[node.depth] + node.w + FOLD_R;
-      fold = { x: fx, y: cy, folded: foldedHere };
+      // 左右长时圆圈在左右边框外，上下长时在下上边框外，星形放在框下面。
+      let fx = node.x + node.w + FOLD_R;
+      let fy = cy;
+      if (layout === "rl") {
+        fx = node.x - FOLD_R;
+      } else if (layout === "tb") {
+        fx = node.cx;
+        fy = node.y + node.h + FOLD_R;
+      } else if (layout === "bt") {
+        fx = node.cx;
+        fy = node.y - FOLD_R;
+      } else if (star) {
+        fx = node.cx;
+        fy = node.y + node.h + FOLD_R + 1;
+      }
+      fold = { x: fx, y: fy, folded: foldedHere };
       const dot = document.createElementNS(SVG, "circle");
       dot.setAttribute("class", "fold");
       dot.setAttribute("cx", String(fx));
-      dot.setAttribute("cy", String(cy));
+      dot.setAttribute("cy", String(fy));
       dot.setAttribute("r", String(FOLD_R));
       const dotTip = document.createElementNS(SVG, "title");
       dotTip.textContent = foldedHere ? t("expandChildren") : t("collapseChildren");
@@ -484,12 +616,12 @@ function paint(root) {
         line.setAttribute("d", "M" + x1 + " " + y1 + "L" + x2 + " " + y2);
         return line;
       };
-      group.append(dot, bar(fx - FOLD_ARM, cy, fx + FOLD_ARM, cy));
-      if (foldedHere) group.append(bar(fx, cy - FOLD_ARM, fx, cy + FOLD_ARM));
+      group.append(dot, bar(fx - FOLD_ARM, fy, fx + FOLD_ARM, fy));
+      if (foldedHere) group.append(bar(fx, fy - FOLD_ARM, fx, fy + FOLD_ARM));
     }
     items.push({
-      x: xs[node.depth],
-      y: cy - node.h / 2,
+      x: node.x,
+      y: node.y,
       w: node.w,
       h: node.h,
       cy: cy,
@@ -568,24 +700,11 @@ function exportMarkup() {
       '">',
     '<rect width="' + width + '" height="' + height + '" fill="' + escapeXml(background) + '"/>',
   ];
+  // 连线在画的时候已经算好了一段路径（方向不同，曲线也不同），照着抄一遍。
   view.edges.forEach(function (edge) {
     out.push(
-      '<path d="M' +
-        edge.px +
-        " " +
-        edge.py +
-        "C" +
-        (edge.px + edge.bend) +
-        " " +
-        edge.py +
-        " " +
-        (edge.cx - edge.bend) +
-        " " +
-        edge.cy +
-        " " +
-        edge.cx +
-        " " +
-        edge.cy +
+      '<path d="' +
+        edge.d +
         '" fill="none" stroke="' +
         escapeXml(border) +
         '" stroke-width="1.2"/>',
@@ -818,6 +937,20 @@ levelsSelect.addEventListener("change", function () {
   }
 });
 
+// 换「展示方式」：换一个方向重画同一棵树。层级、收起的节点、缩放比例都留着，
+// 只是这棵树换了根轴长。
+layoutSelect.addEventListener("change", function () {
+  try {
+    const next = String(layoutSelect.value);
+    if (!LAYOUTS.includes(next)) return;
+    layout = next;
+    updateLayoutTitle();
+    draw();
+  } catch (err) {
+    show(String((err && err.message) || err));
+  }
+});
+
 // 点「全图」：侧栏里换个宽地方看同一张图。
 fullButton.addEventListener("click", function () {
   try {
@@ -993,6 +1126,7 @@ function onMessage(message) {
   fill("zoom-out", "zoomOut", "title");
   fill("zoom-in", "zoomIn", "title");
   fill("empty", "empty");
+  updateLayoutTitle();
 
 const listen = api.onDidReceiveMessage || api.onMessage;
 if (listen) listen.call(api, onMessage);
