@@ -10,6 +10,8 @@
 // 「导出图片」把整张图重画成一张独立的 SVG 交给 host.js 存成文件。
 // 有子节点的节点，右侧线条汇聚的地方画一个小圆圈：点它收起或展开子节点，
 // 圈里一道横线是展开着，再加一道竖线是收着。点末端节点跳到笔记里的那一行。
+// 大纲里的标题画方框；列表项（有序、无序、任务）不画框，字下面一道下划线，
+// 图看起来轻一些，标题也就更显眼。
 // 节点框的宽窄按真正画出来的文字量：页面外的尺子用同一套字体量一遍，
 // 中文、emoji、主题换的字体都不会冒出框外。一行超过换行预算的标签拆成
 // 几行画进高一点的方框，长图不至于被一条很长的节点拉得太宽；预算按节点
@@ -200,7 +202,7 @@ function outline(markdown, path) {
   const lines = markdown.split("\n");
   const start = bodyStart(lines);
   // 根节点先取文件名：全文恰有一个一级标题时，下面把它换成那个标题。
-  const root = { text: fileName(path) || t("note"), children: [], line: 0 };
+  const root = { text: fileName(path) || t("note"), children: [], line: 0, heading: true };
   const stack = [{ node: root, level: 0 }];
   const indents = [];
   let heading = 0;
@@ -242,7 +244,7 @@ function outline(markdown, path) {
     const label = plain(text);
     if (!label) continue;
     while (stack.length > 1 && stack[stack.length - 1].level >= level) stack.pop();
-    const node = { text: label, children: [], line: i };
+    const node = { text: label, children: [], line: i, heading: !!h };
     stack[stack.length - 1].node.children.push(node);
     stack.push({ node: node, level: level });
   }
@@ -294,6 +296,11 @@ function measureWidths(texts) {
     widths.set(text, measure.measureText(text).width);
   });
   return widths;
+}
+
+// 下划线画在最后一行文字基线下面 3 像素：单行落在中线下方，多行跟着最后一行走。
+function underlineY(cy, count) {
+  return cy + 4 + ((count - 1) * LINE_H) / 2 + 3;
 }
 
 // 图上画出来的大小：原尺寸乘缩放档位。
@@ -410,19 +417,33 @@ function paint(root) {
     const group = document.createElementNS(SVG, "g");
     group.setAttribute(
       "class",
-      "node" +
+      "node " +
+        (node.heading ? "heading" : "item") +
         (node.depth === 0 ? " root" : "") +
         (node.children.length ? " branch" : "") +
         (node.collapsed ? " folded" : ""),
     );
     const tip = document.createElementNS(SVG, "title");
     tip.textContent = node.text;
-    const rect = document.createElementNS(SVG, "rect");
-    rect.setAttribute("x", String(xs[node.depth]));
-    rect.setAttribute("y", String(cy - node.h / 2));
-    rect.setAttribute("width", String(node.w));
-    rect.setAttribute("height", String(node.h));
-    rect.setAttribute("rx", "4");
+    // 大纲里的标题才画方框；有序、无序、任务这些列表项没有框，
+    // 字下面一道下划线就够，图看起来轻一些。
+    let frame = null;
+    if (node.heading) {
+      frame = document.createElementNS(SVG, "rect");
+      frame.setAttribute("x", String(xs[node.depth]));
+      frame.setAttribute("y", String(cy - node.h / 2));
+      frame.setAttribute("width", String(node.w));
+      frame.setAttribute("height", String(node.h));
+      frame.setAttribute("rx", "4");
+    } else {
+      const y = underlineY(cy, node.lines.length);
+      frame = document.createElementNS(SVG, "line");
+      frame.setAttribute("class", "underline");
+      frame.setAttribute("x1", String(xs[node.depth]));
+      frame.setAttribute("y1", String(y));
+      frame.setAttribute("x2", String(xs[node.depth] + node.w));
+      frame.setAttribute("y2", String(y));
+    }
     const label = document.createElementNS(SVG, "text");
     label.setAttribute("x", String(xs[node.depth] + PAD_X));
     if (node.lines.length === 1) {
@@ -440,7 +461,7 @@ function paint(root) {
         label.append(span);
       });
     }
-    group.append(tip, rect, label);
+    group.append(tip, frame, label);
     // 有子节点：在节点右端、子节点连线汇聚的地方画个小圆圈，点它收起或展开。
     // 收起的和被「展示层级」挡住的都画加号；只有收起的才画虚线的框。
     let fold = null;
@@ -474,6 +495,7 @@ function paint(root) {
       cy: cy,
       lines: node.lines,
       root: node.depth === 0,
+      heading: node.heading,
       branch: node.children.length > 0,
       folded: node.collapsed,
       fold: fold,
@@ -572,23 +594,42 @@ function exportMarkup() {
   view.items.forEach(function (item) {
     const fill = item.root ? accent : subtle;
     const stroke = item.root || item.branch ? accent : border;
-    out.push(
-      '<rect x="' +
-        item.x +
-        '" y="' +
-        item.y +
-        '" width="' +
-        item.w +
-        '" height="' +
-        item.h +
-        '" rx="4" fill="' +
-        escapeXml(fill) +
-        '" stroke="' +
-        escapeXml(stroke) +
-        '"' +
-        (item.folded ? ' stroke-dasharray="3 2"' : "") +
-        "/>",
-    );
+    if (!item.heading) {
+      const y = underlineY(item.cy, item.lines.length);
+      out.push(
+        '<line x1="' +
+          item.x +
+          '" y1="' +
+          y +
+          '" x2="' +
+          (item.x + item.w) +
+          '" y2="' +
+          y +
+          '" stroke="' +
+          escapeXml(item.branch ? accent : border) +
+          '" stroke-width="1.2"' +
+          (item.folded ? ' stroke-dasharray="3 2"' : "") +
+          "/>",
+      );
+    } else {
+      out.push(
+        '<rect x="' +
+          item.x +
+          '" y="' +
+          item.y +
+          '" width="' +
+          item.w +
+          '" height="' +
+          item.h +
+          '" rx="4" fill="' +
+          escapeXml(fill) +
+          '" stroke="' +
+          escapeXml(stroke) +
+          '"' +
+          (item.folded ? ' stroke-dasharray="3 2"' : "") +
+          "/>",
+      );
+    }
     // 多行的标签一行一个 tspan，和画在页面里时同一套基线。
     const first = item.cy + 4 - ((item.lines.length - 1) * LINE_H) / 2;
     out.push(

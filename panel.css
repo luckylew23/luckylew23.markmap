@@ -127,6 +127,21 @@ svg.map {
 .node.branch rect {
   stroke: var(--ui-accent);
 }
+/* 列表项、任务项没有方框，字下面一道下划线：有分支的用主色，叶子用边框色。 */
+.node .underline {
+  stroke: var(--ui-border);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+}
+.node.branch .underline {
+  stroke: var(--ui-accent);
+}
+.node:hover .underline {
+  stroke-width: 2;
+}
+.node.folded .underline {
+  stroke-dasharray: 3 2;
+}
 .node.root rect {
   fill: var(--ui-accent);
   stroke: var(--ui-accent);
